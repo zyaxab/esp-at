@@ -131,7 +131,7 @@ static uint8_t at_setup_cmd_httpget_to_ram(uint8_t para_num)
 
     // Respond with size
     char header[64];
-    int headerLen = snprintf(header, sizeof(header), "+HTTPGET_TO_RAM:%" PRId32, file_store.length);
+    int headerLen = snprintf(header, sizeof(header), "+HTTPGET_TO_RAM:%" PRId32 "\r\n", file_store.length);
     if(esp_at_port_write_data((uint8_t *) header, headerLen) != headerLen)
     {
         ESP_AT_LOGE(TAG, "Failed to send response");
@@ -177,10 +177,14 @@ static uint8_t at_setup_cmd_httpget_from_ram(uint8_t para_num)
     char header[64];
     int headerLen = snprintf(header, sizeof(header), "+HTTPGET_FROM_RAM:%" PRId32 ",", length);
 
+    // Send chunk
     if(esp_at_port_write_data((uint8_t *) header, headerLen) != headerLen)
         return ESP_AT_RESULT_CODE_ERROR;
 
     if(esp_at_port_write_data(file_store.buffer + offset, length) != length)
+        return ESP_AT_RESULT_CODE_ERROR;
+
+    if(esp_at_port_write_data((uint8_t *) "\r\n", 2) != 2)
         return ESP_AT_RESULT_CODE_ERROR;
 
     return ESP_AT_RESULT_CODE_OK;
