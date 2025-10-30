@@ -26,11 +26,12 @@ where:
 
 On success, the response is
 ```
-+HTTPGET_TO_RAM:<content_length>
++HTTPGET_TO_RAM:<status_code>,<content_length>
 OK
 ```
 where:
-- <content_length>: Specifies the length of the downloaded file.
+- <status_code>: Specifies the status code of the HTTP operation
+- <content_length>: Specifies the length of the downloaded file. Will be zero on failed status codes
 
 #### AT+HTTPGET_FROM_RAM
 This command lets you read a chunk from a downloaded HTTP file that is stored in the ESP32 RAM. The command syntax is

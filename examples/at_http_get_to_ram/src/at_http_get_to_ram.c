@@ -103,10 +103,7 @@ static uint8_t at_setup_cmd_httpget_to_ram(uint8_t para_num)
     int status_code = esp_http_client_get_status_code(context->client);
     ESP_AT_LOGE(TAG, "HTTP status code: %d", status_code);
     if(status_code >= HttpStatus_BadRequest)
-    {
-        ret = ESP_FAIL;
-        goto cmd_exit;
-    }
+        goto skip_download;
 
     if(sizeof(file_store.buffer) < context->total_size)
     {
@@ -129,9 +126,10 @@ static uint8_t at_setup_cmd_httpget_to_ram(uint8_t para_num)
         file_store.length += bytes_read;
     }
 
+skip_download:
     // Respond with size
     char header[64];
-    int headerLen = snprintf(header, sizeof(header), "+HTTPGET_TO_RAM:%" PRId32 "\r\n", file_store.length);
+    int headerLen = snprintf(header, sizeof(header), "+HTTPGET_TO_RAM:%d,%" PRId32 "\r\n", status_code, file_store.length);
     if(esp_at_port_write_data((uint8_t *) header, headerLen) != headerLen)
     {
         ESP_AT_LOGE(TAG, "Failed to send response");
