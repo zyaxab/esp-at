@@ -32,16 +32,13 @@ static uint8_t mac_address[6] = { 0 };
 
 static void w5500_event_handler(void * arg, esp_event_base_t event_base, int32_t event_id, void * event_data)
 {
-    uint8_t mac_addr[6];
     esp_eth_handle_t eth_handle = *(esp_eth_handle_t *) arg;
 
     switch(event_id)
     {
         case ETHERNET_EVENT_CONNECTED:
         {
-            esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
             ESP_AT_LOGI(TAG, "Ethernet link up");
-            ESP_AT_LOGI(TAG, "Ethernet HW address: %02X:%02X:%02X:%02X:%02X:%02X", mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
             
             esp_err_t err = esp_netif_dhcpc_start(s_eth_netif);
             if(err == ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED)
@@ -94,6 +91,11 @@ static void w5500_got_ip_event_handler(void * arg, esp_event_base_t event_base, 
     ESP_AT_LOGI(TAG, "Got IP address:" IPSTR, IP2STR(&event->ip_info.ip));
 }
 
+static void w5500_lost_ip_event_handler(void * arg, esp_event_base_t event_base, int32_t event_id, void * event_data)
+{
+    ESP_AT_LOGI(TAG, "Lost IP");
+}
+
 esp_err_t w5500_init(void)
 {
     // Create default Ethernet netif
@@ -115,7 +117,6 @@ esp_err_t w5500_init(void)
 
     ESP_AT_LOGI(TAG, "Initializing SPI bus");
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &bus_cfg, SPI_DMA_CH_AUTO));
-
 
     // Initialize SPI device
     spi_device_interface_config_t dev_cfg = {
@@ -152,12 +153,12 @@ esp_err_t w5500_init(void)
     ESP_AT_LOGI(TAG, "Setting event handlers");
     ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &w5500_event_handler, &s_eth_handle));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &w5500_got_ip_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_LOST_IP, &w5500_lost_ip_event_handler, NULL));
 
     // Set MAC address
     ESP_ERROR_CHECK(esp_efuse_mac_get_default(mac_address));
     // mac_address[0] = 0x1A; mac_address[1] = 0x12; mac_address[2] = 0x34;
     mac_address[0] = 0xBC; mac_address[1] = 0xE9; mac_address[2] = 0x2F;
-    ESP_AT_LOGI(TAG, "MAC is %p", mac);
     ESP_AT_LOGI(TAG, "Ethernet MAC set to: %02X:%02X:%02X:%02X:%02X:%02X",
         mac_address[0], mac_address[1], mac_address[2],
         mac_address[3], mac_address[4], mac_address[5]);
@@ -168,26 +169,7 @@ esp_err_t w5500_init(void)
     // Start ethernet
     ESP_ERROR_CHECK(esp_eth_start(s_eth_handle));
     
-    // Testing
-    esp_netif_set_default_netif(s_eth_netif);
-
-    esp_netif_dhcp_status_t dhcp_status;
-    if(esp_netif_dhcpc_get_status(s_eth_netif, &dhcp_status) == ESP_OK)
-    {
-        ESP_AT_LOGI(TAG, "DHCP status is %d", dhcp_status);
-    }
-    else
-    {
-        ESP_AT_LOGE(TAG, "Failed to query DHCP status");
-    }
-
     ESP_AT_LOGI(TAG, "W5500 Ethernet successfully initialized");
-
-    uint8_t mac_address[6];
-    ESP_ERROR_CHECK(esp_eth_ioctl(s_eth_handle, ETH_CMD_G_MAC_ADDR, mac_address));
-    ESP_AT_LOGI(TAG, "Ethernet MAC is actually: %02X:%02X:%02X:%02X:%02X:%02X",
-        mac_address[0], mac_address[1], mac_address[2],
-        mac_address[3], mac_address[4], mac_address[5]);
 
     return ESP_OK;
 }
