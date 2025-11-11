@@ -36,6 +36,10 @@ static esp_eth_handle_t s_eth_handle = NULL;
 static esp_netif_t *s_eth_netif = NULL;
 static uint8_t mac_address[6] = { 0 };
 
+#define ETH_STA_ENABLED 2
+#define ETH_STA_DISABLED 0
+static int eth_sta_state = ETH_STA_DISABLED; // Must be two to spoof enabled
+
 static esp_err_t send_urc(const char * urc, size_t urc_sizeof)
 {
     if(esp_at_port_write_data((uint8_t *) urc, urc_sizeof - 1) != (urc_sizeof - 1))
@@ -60,6 +64,7 @@ static void w5500_event_handler(void * arg, esp_event_base_t event_base, int32_t
             break;
 
         case ETHERNET_EVENT_DISCONNECTED:
+            eth_sta_state = ETH_STA_DISABLED;
             ESP_AT_LOGI(TAG, "Ethernet link down");
             if(send_urc(LINK_DOWN, sizeof(LINK_DOWN)) != ESP_OK)
             {
@@ -74,6 +79,7 @@ static void w5500_event_handler(void * arg, esp_event_base_t event_base, int32_t
 
         case ETHERNET_EVENT_STOP:
         {
+            eth_sta_state = ETH_STA_DISABLED;
             ESP_AT_LOGI(TAG, "Ethernet stopped");
             break;
         }
@@ -86,6 +92,8 @@ static void w5500_event_handler(void * arg, esp_event_base_t event_base, int32_t
 
 static void w5500_got_ip_event_handler(void * arg, esp_event_base_t event_base, int32_t event_id, void * event_data)
 {
+    eth_sta_state = ETH_STA_ENABLED;
+
     if(send_urc(IP_GOT, sizeof(IP_GOT)) != ESP_OK)
     {
         ESP_AT_LOGE(TAG, "Failed to send got IP URC");
@@ -93,10 +101,14 @@ static void w5500_got_ip_event_handler(void * arg, esp_event_base_t event_base, 
 
     ip_event_got_ip_t * event = (ip_event_got_ip_t *) event_data;
     ESP_AT_LOGI(TAG, "Got IP address:" IPSTR, IP2STR(&event->ip_info.ip));
+
+    esp_netif_set_default_netif(s_eth_netif);
 }
 
 static void w5500_lost_ip_event_handler(void * arg, esp_event_base_t event_base, int32_t event_id, void * event_data)
 {
+    eth_sta_state = ETH_STA_DISABLED;
+
     if(send_urc(IP_LOST, sizeof(IP_LOST)) != ESP_OK)
     {
         ESP_AT_LOGE(TAG, "Failed to send lost IP URC");
@@ -289,3 +301,7 @@ bool esp_at_w5500_cmd_register(void)
 }
 
 ESP_AT_CMD_SET_INIT_FN(esp_at_w5500_cmd_register, 2);
+
+int at_eth_get_sta_state(void) {
+    return eth_sta_state;
+}
