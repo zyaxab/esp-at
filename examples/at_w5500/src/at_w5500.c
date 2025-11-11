@@ -17,6 +17,12 @@
 
 static const char TAG[] = "W5500";
 
+//! URCs
+static const char IP_GOT[] = "ETHERNET IP GOT\r\n";
+static const char IP_LOST[] = "ETHERNET IP LOST\r\n";
+static const char LINK_UP[] = "ETHERNET LINK UP\r\n";
+static const char LINK_DOWN[] = "ETHERNET LINK DOWN\r\n";
+
 //! \note Not ideal that they're hard coded but will do for now
 #define PIN_NUM_MISO   2
 #define PIN_NUM_MOSI   7
@@ -25,10 +31,18 @@ static const char TAG[] = "W5500";
 #define PIN_NUM_INT    8
 #define PIN_NUM_RST   -1
 
+//! Local storage
 static esp_eth_handle_t s_eth_handle = NULL;
 static esp_netif_t *s_eth_netif = NULL;
-
 static uint8_t mac_address[6] = { 0 };
+
+static esp_err_t send_urc(const char * urc, size_t urc_sizeof)
+{
+    if(esp_at_port_write_data((uint8_t *) urc, urc_sizeof - 1) != (urc_sizeof - 1))
+        return ESP_FAIL;
+
+    return ESP_OK;
+}
 
 static void w5500_event_handler(void * arg, esp_event_base_t event_base, int32_t event_id, void * event_data)
 {
@@ -37,24 +51,21 @@ static void w5500_event_handler(void * arg, esp_event_base_t event_base, int32_t
     switch(event_id)
     {
         case ETHERNET_EVENT_CONNECTED:
-        {
             ESP_AT_LOGI(TAG, "Ethernet link up");
-            
-            esp_err_t err = esp_netif_dhcpc_start(s_eth_netif);
-            if(err == ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED)
+            if(send_urc(LINK_UP, sizeof(LINK_UP)) != ESP_OK)
             {
-                ESP_AT_LOGI(TAG, "DHCP already started");
-            }
-            else if(err != ESP_OK)
-            {
-                ESP_AT_LOGE(TAG, "Failed to start DHCP: %s", esp_err_to_name(err));
+                ESP_AT_LOGE(TAG, "Failed to send link up URC");
             }
 
             break;
-        }
 
         case ETHERNET_EVENT_DISCONNECTED:
             ESP_AT_LOGI(TAG, "Ethernet link down");
+            if(send_urc(LINK_DOWN, sizeof(LINK_DOWN)) != ESP_OK)
+            {
+                ESP_AT_LOGE(TAG, "Failed to send link down URC");
+            }
+
             break;
 
         case ETHERNET_EVENT_START:
@@ -64,18 +75,6 @@ static void w5500_event_handler(void * arg, esp_event_base_t event_base, int32_t
         case ETHERNET_EVENT_STOP:
         {
             ESP_AT_LOGI(TAG, "Ethernet stopped");
-
-            esp_err_t err;
-            err = esp_netif_dhcpc_stop(s_eth_netif);
-            if(err == ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED)
-            {
-                ESP_AT_LOGI(TAG, "DHCP already stopped");
-            }
-            else if(err != ESP_OK)
-            {
-                ESP_AT_LOGE(TAG, "Failed to stop DHCP");
-            }
-
             break;
         }
 
@@ -87,12 +86,22 @@ static void w5500_event_handler(void * arg, esp_event_base_t event_base, int32_t
 
 static void w5500_got_ip_event_handler(void * arg, esp_event_base_t event_base, int32_t event_id, void * event_data)
 {
+    if(send_urc(IP_GOT, sizeof(IP_GOT)) != ESP_OK)
+    {
+        ESP_AT_LOGE(TAG, "Failed to send got IP URC");
+    }
+
     ip_event_got_ip_t * event = (ip_event_got_ip_t *) event_data;
     ESP_AT_LOGI(TAG, "Got IP address:" IPSTR, IP2STR(&event->ip_info.ip));
 }
 
 static void w5500_lost_ip_event_handler(void * arg, esp_event_base_t event_base, int32_t event_id, void * event_data)
 {
+    if(send_urc(IP_LOST, sizeof(IP_LOST)) != ESP_OK)
+    {
+        ESP_AT_LOGE(TAG, "Failed to send lost IP URC");
+    }
+
     ESP_AT_LOGI(TAG, "Lost IP");
 }
 
@@ -157,12 +166,12 @@ esp_err_t w5500_init(void)
 
     // Set MAC address
     ESP_ERROR_CHECK(esp_efuse_mac_get_default(mac_address));
-    // mac_address[0] = 0x1A; mac_address[1] = 0x12; mac_address[2] = 0x34;
-    mac_address[0] = 0xBC; mac_address[1] = 0xE9; mac_address[2] = 0x2F;
+    mac_address[0] = 0x02; mac_address[1] = 0x11; mac_address[2] = 0x22;
     ESP_AT_LOGI(TAG, "Ethernet MAC set to: %02X:%02X:%02X:%02X:%02X:%02X",
         mac_address[0], mac_address[1], mac_address[2],
         mac_address[3], mac_address[4], mac_address[5]);
 
+    //! \todo Check if we need both or just \p esp_netif_set_mac
     ESP_ERROR_CHECK(esp_eth_ioctl(s_eth_handle, ETH_CMD_S_MAC_ADDR, mac_address));
     ESP_ERROR_CHECK(esp_netif_set_mac(s_eth_netif, mac_address));
 
@@ -185,8 +194,13 @@ static uint8_t at_query_ethernet_ip(uint8_t * cmd_name)
         return ESP_AT_RESULT_CODE_ERROR;
     }
 
-    char resp[64];
-    int respLen = snprintf(resp, sizeof(resp), "+ETHIP:" IPSTR "\r\n", IP2STR(&ip_info.ip));
+    static const char formatter[] =
+        "+ETHIP:ip:"       IPSTR "\r\n"
+        "+ETHIP:gateway:"  IPSTR "\r\n"
+        "+ETHPIP:netmask:" IPSTR "\r\n";
+
+    char resp[128];
+    int respLen = snprintf(resp, sizeof(resp), formatter, IP2STR(&ip_info.ip), IP2STR(&ip_info.gw), IP2STR(&ip_info.netmask));
     
     if(esp_at_port_write_data((uint8_t *) resp, respLen) != respLen)
     {
@@ -208,13 +222,24 @@ static uint8_t at_set_ethernet_ip(uint8_t para_num)
 
     if(esp_at_get_para_as_str(0, &para) != ESP_AT_PARA_PARSE_RESULT_OK)
         return ESP_AT_RESULT_CODE_ERROR;
+        
     ip_info.ip.addr = esp_ip4addr_aton((const char *) para);
 
     if(esp_at_get_para_as_str(1, &para) == ESP_AT_PARA_PARSE_RESULT_OK)
         ip_info.netmask.addr = esp_ip4addr_aton((const char *) para);
+    else
+        ip_info.netmask.addr = 0xFFFFFF00;
 
     if(esp_at_get_para_as_str(2, &para) == ESP_AT_PARA_PARSE_RESULT_OK)
         ip_info.gw.addr = esp_ip4addr_aton((const char *) para);
+    else
+        ip_info.gw.addr = (ip_info.ip.addr & 0xFFFFFF00) | 0x01;
+
+    if(ip_info.ip.addr == ip_info.gw.addr)
+    {
+        ESP_AT_LOGE(TAG, "IP address can't be the same as the gateway");
+        return ESP_AT_RESULT_CODE_ERROR;
+    }
 
     // Stop DHCP if not already running
     esp_err_t err = esp_netif_dhcpc_stop(s_eth_netif);
@@ -250,78 +275,10 @@ static uint8_t at_query_ethernet_mac(uint8_t * cmd_name)
     return ESP_AT_RESULT_CODE_OK;
 }
 
-static uint8_t at_query_dummy(uint8_t * cmd_name)
-{
-    {
-        esp_netif_dhcp_status_t dhcp_status;
-        if(esp_netif_dhcpc_get_status(s_eth_netif, &dhcp_status) == ESP_OK)
-        {
-            ESP_AT_LOGI(TAG, "DHCP status is %d", dhcp_status);
-        }
-        else
-        {
-            ESP_AT_LOGE(TAG, "Failed to query DHCP status");
-        }
-    }
-
-    {
-        uint8_t mac_address[6];
-        ESP_ERROR_CHECK(esp_eth_ioctl(s_eth_handle, ETH_CMD_G_MAC_ADDR, mac_address));
-        ESP_AT_LOGI(TAG, "Ethernet MAC is actually: %02X:%02X:%02X:%02X:%02X:%02X",
-            mac_address[0], mac_address[1], mac_address[2],
-            mac_address[3], mac_address[4], mac_address[5]);
-    }
-
-    {
-        esp_netif_t *def = esp_netif_get_default_netif();
-        ESP_AT_LOGI(TAG, "Default netif: %p (desc=%s)", def, esp_netif_get_desc(def));
-    }
-
-    {
-        esp_netif_ip_info_t ip_info;
-        if (esp_netif_get_ip_info(s_eth_netif, &ip_info) == ESP_OK) {
-            if (ip_info.ip.addr != 0) {
-                ESP_AT_LOGI(TAG, "Already has IP: " IPSTR, IP2STR(&ip_info.ip));
-            } else {
-                ESP_AT_LOGI(TAG, "No IP yet");
-            }
-        }
-    }
-
-    esp_netif_t *netif = NULL;
-    netif = esp_netif_next_unsafe(netif);  // Get the first netif
-
-    if (netif == NULL) {
-        ESP_AT_LOGI(TAG, "No network interfaces registered.");
-        return 0;
-    }
-
-    while (netif != NULL) {
-        const char *desc = esp_netif_get_desc(netif);
-        ESP_AT_LOGI(TAG, "Netif: %p, Desc: %s", netif, desc ? desc : "(no desc)");
-
-        // You can also get more info if needed:
-        esp_netif_ip_info_t ip_info;
-        if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
-            ESP_AT_LOGI(TAG, "  IP: " IPSTR ", MASK: " IPSTR ", GW: " IPSTR,
-                     IP2STR(&ip_info.ip),
-                     IP2STR(&ip_info.netmask),
-                     IP2STR(&ip_info.gw));
-        } else {
-            ESP_AT_LOGI(TAG, "  (No IP info yet)");
-        }
-
-        netif = esp_netif_next_unsafe(netif);  // Move to the next one
-    }
-
-    return 0;
-}
-
 static const esp_at_cmd_struct at_w5500_cmd[] =
 {
     { "+ETHIP"     , NULL, at_query_ethernet_ip,  at_set_ethernet_ip,   NULL },
     { "+ETHMAC"    , NULL, at_query_ethernet_mac, NULL,                 NULL },
-    { "+DUMMY"     , NULL, at_query_dummy,        NULL,                 NULL },
 };
 
 bool esp_at_w5500_cmd_register(void)
