@@ -26,8 +26,16 @@ export AT_CUSTOM_COMPONENTS="path/to/esp-at/examples/at_w5500"
 2. Compile & flash as normal.
 
 ### Commands
-Realistically, you don't need to use these commands. By default, the default MAC address is used & DHCP is enabled. Unless using some weird network, this component should just work. The commands
+Realistically, you only need to use the initialization command. By default, the default MAC address is used & DHCP is enabled. Unless using some weird network, this component should just work. The other commands
 can be handy for testing though.
+
+#### AT+ETHINIT
+Initialize the W5500 ethernet PHY chip. The reason why we don't automatically do this on bootup is that the added boot time can mess with AT implementations.
+```
+AT+ETHINIT
+```
+
+After successfully invoking this command, the W5500 gets initialized and you can start using ethernet, assuming you get a valid IP. This command must be called before other `AT+ETHXXX` commands work. Subsequent calls to the init function will fail.
 
 #### AT+ETHIP
 This command allows you to query & set the IP address of the ESP32 chip. Doing this disables DHCP until reset.

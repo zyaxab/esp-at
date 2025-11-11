@@ -32,6 +32,7 @@ static const char LINK_DOWN[] = "ETHERNET LINK DOWN\r\n";
 #define PIN_NUM_RST   -1
 
 //! Local storage
+static bool initialized = false;
 static esp_eth_handle_t s_eth_handle = NULL;
 static esp_netif_t *s_eth_netif = NULL;
 static uint8_t mac_address[6] = { 0 };
@@ -194,9 +195,25 @@ esp_err_t w5500_init(void)
     return ESP_OK;
 }
 
+static uint8_t at_exec_ethernet_init(uint8_t * cmd_name)
+{
+    if(initialized)
+        return ESP_AT_RESULT_CODE_ERROR;
+
+    if(w5500_init() != ESP_OK)
+        return ESP_AT_RESULT_CODE_ERROR;
+
+    initialized = true;
+
+    return ESP_AT_RESULT_CODE_OK;
+}
+
 static uint8_t at_query_ethernet_ip(uint8_t * cmd_name)
 {
     (void) cmd_name;
+
+    if(!initialized)
+        return ESP_AT_RESULT_CODE_ERROR;
 
     esp_netif_ip_info_t ip_info; 
     if(esp_netif_get_ip_info(s_eth_netif, &ip_info) != ESP_OK)
@@ -224,7 +241,7 @@ static uint8_t at_query_ethernet_ip(uint8_t * cmd_name)
 
 static uint8_t at_set_ethernet_ip(uint8_t para_num)
 {
-    if((para_num < 1) || (para_num > 3))
+    if((!initialized) || (para_num < 1) || (para_num > 3))
         return ESP_AT_RESULT_CODE_ERROR;
 
     // Gather IP information
@@ -273,6 +290,9 @@ static uint8_t at_set_ethernet_ip(uint8_t para_num)
 
 static uint8_t at_query_ethernet_mac(uint8_t * cmd_name)
 {
+    if(!initialized)
+        return ESP_AT_RESULT_CODE_ERROR;
+
     char resp[64];
     int respLen = snprintf(resp, sizeof(resp), "+ETHMAC:%02X:%02X:%02X:%02X:%02X:%02X\r\n", 
         mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
@@ -288,15 +308,13 @@ static uint8_t at_query_ethernet_mac(uint8_t * cmd_name)
 
 static const esp_at_cmd_struct at_w5500_cmd[] =
 {
+    { "+ETHINIT"   , NULL, NULL,                  NULL,                 at_exec_ethernet_init },
     { "+ETHIP"     , NULL, at_query_ethernet_ip,  at_set_ethernet_ip,   NULL },
     { "+ETHMAC"    , NULL, at_query_ethernet_mac, NULL,                 NULL },
 };
 
 bool esp_at_w5500_cmd_register(void)
 {
-    if(w5500_init() != ESP_OK)
-        return false;
-
     return esp_at_custom_cmd_array_regist(at_w5500_cmd, sizeof(at_w5500_cmd) / sizeof(esp_at_cmd_struct));
 }
 
