@@ -171,7 +171,6 @@ esp_err_t w5500_init(void)
         mac_address[0], mac_address[1], mac_address[2],
         mac_address[3], mac_address[4], mac_address[5]);
 
-    //! \todo Check if we need both or just \p esp_netif_set_mac
     ESP_ERROR_CHECK(esp_eth_ioctl(s_eth_handle, ETH_CMD_S_MAC_ADDR, mac_address));
     ESP_ERROR_CHECK(esp_netif_set_mac(s_eth_netif, mac_address));
 
