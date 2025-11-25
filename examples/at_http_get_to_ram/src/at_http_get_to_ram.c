@@ -96,6 +96,12 @@ static uint8_t at_setup_cmd_httpget_to_ram(uint8_t para_num)
 
     // Establish connection
     ret = esp_http_client_open(context->client, 0);
+    while(ret == ESP_ERR_HTTP_CONNECTING)
+    {
+        vTaskDelay(10);
+        ret = esp_http_client_open(context->client, 0);
+    }
+
     if(ret != ESP_OK)
         goto cmd_exit;
 
@@ -146,6 +152,14 @@ cmd_exit:
 
     ESP_AT_LOGI(TAG, "Downloaded file of %d bytes", (int) file_store.length);
 
+    ret = esp_http_client_close(context->client);
+    if(ret != ESP_OK)
+        ESP_AT_LOGE(TAG, "Failed to close HTTP client (err: %d), something is very wrong", ret);
+
+    ret = esp_http_client_cleanup(context->client);
+    if(ret != ESP_OK)
+        ESP_AT_LOGE(TAG, "Failed to cleanup HTTP client (err: %d), something is very wrong", ret);
+        
     return ESP_AT_RESULT_CODE_OK;
 }
 
