@@ -3,6 +3,7 @@ This fork includes some features we need from `ESP-AT` that are not supported at
 
 These features currently include:
 1. Support for downloading HTTP files into RAM & reading the file chunk-wise. See `examples/at_http_get_to_ram`.
+2. Support for the W5500 ethernet PHY chip.
 
 ### Bootstrapping
 If you are using a Linux distro, that does not use the `apt` package manager (for example Fedora uses `dnf`), then define the following environment variable.
@@ -14,7 +15,7 @@ ESP-IDF will attempt to download it's dependencies but it only supports `apt`. T
 
 Secondly, we are compiling `ESP-AT` with custom components. These need to be enabled via another environment variable, as such:
 ```bash
-export AT_CUSTOM_COMPONENTS="/path/to/esp-at-fork/examples/at_http_get_to_ram"
+export AT_CUSTOM_COMPONENTS="/path/to/esp-at-fork/examples/at_http_get_to_ram /path/to/esp-at-fork/examples/at_w5500"
 ```
 
 It's recommended to add these to your `.bashrc` file (or equivalent).

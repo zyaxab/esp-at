@@ -4,6 +4,7 @@
 include/config
 include/sdkconfig.h
 build/
+esp-idf/
 sdkconfig.old
 sdkconfig
 .DS_Store
