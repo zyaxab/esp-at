@@ -16,17 +16,17 @@ git submodule update --init
 
 Run the ESP install script
 ```
-export AT_CUSTOM_COMPONENTS="/path/to/esp-at-fork/examples/at_http_get_to_ram /path/to/esp-at-fork/examples/at_w5500"
 ./build.py install
 ```
 
 ### Building
 
 To set the binary version use `./build.py menuconfig` and navigate to `Application Manager > Project Version` and set the version
+To use our custom components `export AT_CUSTOM_COMPONENTS="/path/to/esp-at-fork/examples/at_http_get_to_ram /path/to/esp-at-fork/examples/at_w5500"` is required to be ran prior to builds commands, to example commands assume this is being built from the repo's root
 
 Then to actually build
 ```
-export AT_CUSTOM_COMPONENTS="/path/to/esp-at-fork/examples/at_http_get_to_ram /path/to/esp-at-fork/examples/at_w5500"
+export AT_CUSTOM_COMPONENTS="examples/at_http_get_to_ram examples/at_w5500"
 ./build.py build
 ```
 
