@@ -4,9 +4,7 @@
 include/config
 include/sdkconfig.h
 build/
-esp-idf/
 sdkconfig.old
-sdkconfig
 .DS_Store
 
 *.pyc
@@ -29,3 +27,5 @@ docs/doxygen_sqlite3.db
 # Downloaded font files
 docs/_static/DejaVuSans.ttf
 docs/_static/NotoSansSC-Regular.otf
+
+env/**
