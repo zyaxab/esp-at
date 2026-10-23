@@ -137,6 +137,11 @@ esp_err_t w5500_init(void)
         .quadhd_io_num = -1,
     };
 
+    // The W5500 driver registers its interrupt through the shared GPIO ISR service
+    esp_err_t isr_err = gpio_install_isr_service(0);
+    if(isr_err != ESP_OK && isr_err != ESP_ERR_INVALID_STATE)
+        ESP_ERROR_CHECK(isr_err);
+
     ESP_AT_LOGI(TAG, "Initializing SPI bus");
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &bus_cfg, SPI_DMA_CH_AUTO));
 
@@ -152,6 +157,8 @@ esp_err_t w5500_init(void)
 
     // Create MAC & PHY instances
     eth_w5500_config_t w5500_config = ETH_W5500_DEFAULT_CONFIG(SPI2_HOST, &dev_cfg);
+    // The default interrupt pin is GPIO 4, which is the AT UART's CTS
+    w5500_config.int_gpio_num = PIN_NUM_INT;
     eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
     eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
     phy_config.reset_gpio_num = PIN_NUM_RST;

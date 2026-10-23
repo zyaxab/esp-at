@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include "esp_http_client.h"
 
 #define AT_NETWORK_TIMEOUT_MS       (5000)
@@ -186,20 +187,22 @@ static uint8_t at_setup_cmd_httpget_from_ram(uint8_t para_num)
     if(offset + length > file_store.length)
         length = file_store.length - offset;
 
-    char header[64];
-    int headerLen = snprintf(header, sizeof(header), "+HTTPGET_FROM_RAM:%" PRId32 ",", length);
+    // Build the whole response so it is sent in a single write. Separate writes allow URCs
+    // (e.g. +IPD or WIFI DISCONNECT) to end up in the middle of the payload.
+    uint8_t * response = malloc(64 + length + 2);
+    if(response == NULL)
+        return ESP_AT_RESULT_CODE_ERROR;
+
+    int headerLen = snprintf((char *) response, 64, "+HTTPGET_FROM_RAM:%" PRId32 ",", length);
+    memcpy(response + headerLen, file_store.buffer + offset, length);
+    memcpy(response + headerLen + length, "\r\n", 2);
 
     // Send chunk
-    if(esp_at_port_write_data((uint8_t *) header, headerLen) != headerLen)
-        return ESP_AT_RESULT_CODE_ERROR;
+    int32_t responseLen = headerLen + length + 2;
+    bool sent = esp_at_port_write_data(response, responseLen) == responseLen;
+    free(response);
 
-    if(esp_at_port_write_data(file_store.buffer + offset, length) != length)
-        return ESP_AT_RESULT_CODE_ERROR;
-
-    if(esp_at_port_write_data((uint8_t *) "\r\n", 2) != 2)
-        return ESP_AT_RESULT_CODE_ERROR;
-
-    return ESP_AT_RESULT_CODE_OK;
+    return sent ? ESP_AT_RESULT_CODE_OK : ESP_AT_RESULT_CODE_ERROR;
 }
 
 static const esp_at_cmd_struct at_http_to_ram_cmd[] =
